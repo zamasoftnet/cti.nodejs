@@ -1,0 +1,38 @@
+{
+  "name": "copper-cti",
+  "version": "1.0.0",
+  "description": "Copper PDF CTI Driver for Node.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "copper",
+    "pdf",
+    "cti",
+    "ctip",
+    "driver",
+    "html-to-pdf"
+  ],
+  "author": "Zamasoft",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mimidesunya/copper_drivers.git",
+    "directory": "cti.nodejs"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  }
+}
