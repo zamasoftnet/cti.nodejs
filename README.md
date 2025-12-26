@@ -11,21 +11,10 @@ CTIP (Copper Transaction Interlace Protocol) 2.0 に対応しています。
 
 ## インストール
 
-### npmからインストール（公開後）
-
-```bash
-npm install copper-cti
-```
-
 ### Gitリポジトリからインストール
 
 ```bash
-git clone https://github.com/mimidesunya/copper_drivers.git
-cd copper_drivers/cti.nodejs
-npm install
-npm run build
-cd ../..
-npm install ./copper_drivers/cti.nodejs
+npm install https://github.com/mimidesunya/cti.nodejs.git
 ```
 
 ## 使い方
