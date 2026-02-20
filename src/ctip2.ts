@@ -1,13 +1,13 @@
 /**
- * CTIP2 Protocol Implementation
+ * CTIP2 プロトコル実装
  * 
- * This module provides packet generation and parsing for the CTIP2 protocol
- * used to communicate with Copper PDF servers.
+ * このモジュールは、Copper PDFサーバーとの通信に使用されるCTIP2プロトコルの
+ * パケット生成および解析機能を提供します。
  */
 
-/** Protocol message types */
+/** プロトコルメッセージタイプ */
 export const MSG = {
-    // Request types
+    // リクエストタイプ
     REQ_PROPERTY: 0x01,
     REQ_START_MAIN: 0x02,
     REQ_SERVER_MAIN: 0x03,
@@ -23,7 +23,7 @@ export const MSG = {
     REQ_CLOSE: 0x42,
     REQ_SERVER_INFO: 0x51,
 
-    // Response types
+    // レスポンスタイプ
     RES_START_DATA: 0x01,
     RES_BLOCK_DATA: 0x11,
     RES_ADD_BLOCK: 0x12,
@@ -41,7 +41,7 @@ export const MSG = {
     CTI_BUFFER_SIZE: 8192
 } as const;
 
-/** Response packet interface */
+/** レスポンスパケット インターフェース */
 export interface Packet {
     type: number;
     uri?: string;
@@ -56,7 +56,7 @@ export interface Packet {
     mode?: number;
 }
 
-// --- Write Helpers ---
+// --- 書き込みヘルパー ---
 
 function writeInt(buf: Buffer, offset: number, value: number): number {
     buf.writeUInt32BE(value, offset);
@@ -86,9 +86,9 @@ function writeLong(buf: Buffer, offset: number, value: number): number {
     return offset + 8;
 }
 
-// --- Request Generators ---
+// --- リクエスト生成 ---
 
-/** Generate server info request packet */
+/** サーバー情報リクエストパケットを生成 */
 export function req_server_info(uri: string): Buffer {
     const uriBuf = Buffer.from(uri, 'utf8');
     const payloadSize = 1 + 2 + uriBuf.length;
@@ -101,7 +101,7 @@ export function req_server_info(uri: string): Buffer {
     return buf;
 }
 
-/** Generate client resource mode request packet */
+/** クライアントリソースモードリクエストパケットを生成 */
 export function req_client_resource(mode: boolean): Buffer {
     const payloadSize = 2;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -112,7 +112,7 @@ export function req_client_resource(mode: boolean): Buffer {
     return buf;
 }
 
-/** Generate continuous mode request packet */
+/** 連続モードリクエストパケットを生成 */
 export function req_continuous(mode: boolean): Buffer {
     const payloadSize = 2;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -123,7 +123,7 @@ export function req_continuous(mode: boolean): Buffer {
     return buf;
 }
 
-/** Generate missing resource notification packet */
+/** リソース欠落通知パケットを生成 */
 export function req_missing_resource(uri: string): Buffer {
     const uriBuf = Buffer.from(uri, 'utf8');
     const payloadSize = 1 + 2 + uriBuf.length;
@@ -135,7 +135,7 @@ export function req_missing_resource(uri: string): Buffer {
     return buf;
 }
 
-/** Generate reset request packet */
+/** リセットリクエストパケットを生成 */
 export function req_reset(): Buffer {
     const payloadSize = 1;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -145,7 +145,7 @@ export function req_reset(): Buffer {
     return buf;
 }
 
-/** Generate abort request packet */
+/** 中断リクエストパケットを生成 */
 export function req_abort(mode: number): Buffer {
     const payloadSize = 2;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -156,7 +156,7 @@ export function req_abort(mode: number): Buffer {
     return buf;
 }
 
-/** Generate join request packet */
+/** 結合リクエストパケットを生成 */
 export function req_join(): Buffer {
     const payloadSize = 1;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -166,7 +166,7 @@ export function req_join(): Buffer {
     return buf;
 }
 
-/** Generate EOF request packet */
+/** EOFリクエストパケットを生成 */
 export function req_eof(): Buffer {
     const payloadSize = 1;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -176,7 +176,7 @@ export function req_eof(): Buffer {
     return buf;
 }
 
-/** Generate property request packet */
+/** プロパティ設定リクエストパケットを生成 */
 export function req_property(name: string, value: string): Buffer {
     const nameBuf = Buffer.from(name, 'utf8');
     const valBuf = Buffer.from(value, 'utf8');
@@ -190,7 +190,7 @@ export function req_property(name: string, value: string): Buffer {
     return buf;
 }
 
-/** Generate server main request packet */
+/** サーバーメインリクエストパケットを生成 */
 export function req_server_main(uri: string): Buffer {
     const uriBuf = Buffer.from(uri, 'utf8');
     const payloadSize = 1 + 2 + uriBuf.length;
@@ -202,7 +202,7 @@ export function req_server_main(uri: string): Buffer {
     return buf;
 }
 
-/** Generate start resource request packet */
+/** リソース開始リクエストパケットを生成 */
 export function req_start_resource(
     uri: string,
     mimeType: string = 'text/css',
@@ -224,7 +224,7 @@ export function req_start_resource(
     return buf;
 }
 
-/** Generate start main request packet */
+/** メイン開始リクエストパケットを生成 */
 export function req_start_main(
     uri: string,
     mimeType: string = 'text/html',
@@ -246,7 +246,7 @@ export function req_start_main(
     return buf;
 }
 
-/** Generate data request packet */
+/** データリクエストパケットを生成 */
 export function req_data(data: Buffer | string): Buffer {
     const dBuf = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
     const payloadSize = 1 + dBuf.length;
@@ -258,7 +258,7 @@ export function req_data(data: Buffer | string): Buffer {
     return buf;
 }
 
-/** Generate close request packet */
+/** 終了リクエストパケットを生成 */
 export function req_close(): Buffer {
     return req_simple(MSG.REQ_CLOSE);
 }
@@ -272,9 +272,9 @@ function req_simple(type: number): Buffer {
     return buf;
 }
 
-// --- Packet Parsing ---
+// --- パケット解析 ---
 
-/** Buffer reader helper class */
+/** バッファ読み込みヘルパークラス */
 class BufferReader {
     private buffer: Buffer;
     public offset: number = 0;
@@ -329,16 +329,16 @@ class BufferReader {
     }
 }
 
-/** Packet parser for CTIP2 protocol responses */
+/** CTIP2 プロトコルレスポンスのパケットパーサー */
 export class PacketParser {
     private buffer: Buffer = Buffer.alloc(0);
 
-    /** Append data to the internal buffer */
+    /** 内部バッファにデータを追加 */
     append(data: Buffer): void {
         this.buffer = Buffer.concat([this.buffer, data]);
     }
 
-    /** Parse and return the next available packet, or null if incomplete */
+    /** 次に利用可能なパケットを解析して返す。不完全な場合はnullを返す */
     next(): Packet | null {
         if (this.buffer.length < 4) {
             return null;

@@ -18,3 +18,7 @@ output/
 # Debug files
 *.log
 *.tmp
+build/
+coverage/
+test/config*.json
+.nyc_output/

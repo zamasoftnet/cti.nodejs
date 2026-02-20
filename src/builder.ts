@@ -1,8 +1,8 @@
 /**
- * Builder Module
+ * Builder モジュール
  * 
- * This module provides builder classes for constructing PDF output from fragments.
- * It handles both memory and disk-based fragment storage for efficient memory usage.
+ * このモジュールは、フラグメントからPDF出力を構築するためのビルダークラスを提供します。
+ * メモリ使用効率を高めるために、メモリとディスクベースの両方のフラグメントストレージを処理します。
  */
 
 import * as fs from 'fs';
@@ -10,16 +10,16 @@ import * as path from 'path';
 import * as os from 'os';
 import { Writable } from 'stream';
 
-/** Maximum size of a fragment in memory before spilling to disk */
+/** ディスクに書き出す前のフラグメントの最大メモリサイズ */
 const FRG_MEM_SIZE = 256;
 
-/** Maximum total memory usage before forcing disk writes */
+/** ディスク書き込みを強制する前の最大合計メモリ使用量 */
 const ON_MEMORY = 1024 * 1024;
 
-/** Segment size for temporary file storage */
+/** 一時ファイルストレージのセグメントサイズ */
 const SEGMENT_SIZE = 8192;
 
-/** Fragment data structure for managing output chunks */
+/** 出力チャンクを管理するためのフラグメントデータ構造 */
 class Fragment {
     id: number;
     prev: Fragment | null = null;
@@ -34,17 +34,17 @@ class Fragment {
     }
 
     /**
-     * Write data to this fragment
-     * @param builder - The parent builder (manages temp file)
-     * @param data - Data to write
-     * @param currentTotalOnMemory - Current total memory usage
-     * @returns Memory delta (positive = increased, negative = decreased)
+     * このフラグメントにデータを書き込む
+     * @param builder - 親ビルダー (一時ファイルを管理)
+     * @param data - 書き込むデータ
+     * @param currentTotalOnMemory - 現在の合計メモリ使用量
+     * @returns メモリ差分 (正数 = 増加, 負数 = 減少)
      */
     async write(builder: StreamBuilder, data: Buffer, currentTotalOnMemory: number): Promise<number> {
         const len = data.length;
         let memoryDelta = 0;
 
-        // Check if we can store in memory
+        // メモリに保存可能かチェック
         if (this.segments === null &&
             this.length + len <= FRG_MEM_SIZE &&
             currentTotalOnMemory + len <= ON_MEMORY) {
@@ -55,15 +55,15 @@ class Fragment {
             return memoryDelta;
         }
 
-        // Need to write to disk
-        // First flush existing buffer if any
+        // ディスクに書き込む必要がある
+        // 既存のバッファがあれば先にフラッシュする
         if (this.buffer.length > 0) {
             const flushedLen = this.buffer.length;
             await this._flushBufferToDisk(builder);
             memoryDelta -= flushedLen;
         }
 
-        // Write new data to disk
+        // 新しいデータをディスクに書き込む
         await this._writeToDisk(builder, data);
         this.length += len;
 
@@ -106,9 +106,9 @@ class Fragment {
         }
     }
 
-    /** Flush fragment contents to output stream */
+    /** フラグメントの内容を出力ストリームにフラッシュする */
     async flushToStream(builder: StreamBuilder, outStream: Writable): Promise<void> {
-        // Memory-based fragment
+        // メモリベースのフラグメント
         if (this.segments === null) {
             if (this.buffer.length > 0) {
                 if (!outStream.write(this.buffer)) {
@@ -118,7 +118,7 @@ class Fragment {
             return;
         }
 
-        // Disk-based fragment
+        // ディスクベースのフラグメント
         for (let i = 0; i < this.segments.length; i++) {
             const segIndex = this.segments[i];
             const readSize = (i === this.segments.length - 1) ? this.segLen : SEGMENT_SIZE;
@@ -145,7 +145,7 @@ class Fragment {
     }
 }
 
-/** Builder interface for output construction */
+/** 出力構築用のビルダーインターフェース */
 export interface Builder {
     addBlock(): void;
     insertBlockBefore(anchorId: number): void;
@@ -156,10 +156,10 @@ export interface Builder {
     dispose(): Promise<void>;
 }
 
-/** Type for finish callback function */
+/** 完了コールバック関数の型 */
 export type FinishCallback = (totalLength: number) => Promise<void> | void;
 
-/** Builder that writes output to a stream */
+/** ストリームに出力を書き込むビルダー */
 export class StreamBuilder implements Builder {
     protected out: Writable;
     protected finishFunc: FinishCallback | null;
@@ -169,7 +169,7 @@ export class StreamBuilder implements Builder {
     protected onMemory: number = 0;
     protected totalLength: number = 0;
 
-    // Temp file management
+    // 一時ファイル管理
     protected tempPath: string | null = null;
     protected fd: fs.promises.FileHandle | null = null;
     public nextSegmentIndex: number = 0;
@@ -211,25 +211,22 @@ export class StreamBuilder implements Builder {
         this.last = frg;
     }
 
-    insertBlockBefore(anchorId: number): void {
-        const id = this.frgs.length;
-        const frg = new Fragment(id);
-        this.frgs.push(frg);
+  insertBlockBefore(anchorId: number): void {
+    const id = this.frgs.length;
+    const frg = new Fragment(id);
+    this.frgs.push(frg);
 
-        const anchor = this.frgs[anchorId];
+    const anchor = this.frgs[anchorId];
 
-        frg.prev = anchor.prev;
-        frg.next = anchor;
+    frg.prev = anchor.prev;
+    frg.next = anchor;
+    anchor.prev!.next = frg;
+    anchor.prev = frg;
 
-        if (anchor.prev) {
-            anchor.prev.next = frg;
-        }
-        anchor.prev = frg;
-
-        if (this.first === anchor) {
-            this.first = frg;
-        }
+    if (this.first === anchor) {
+      this.first = frg;
     }
+  }
 
     async write(id: number, data: Buffer): Promise<void> {
         const frg = this.frgs[id];
@@ -245,7 +242,7 @@ export class StreamBuilder implements Builder {
     }
 
     closeBlock(_id: number): void {
-        // No-op
+        // 何もしない
     }
 
     async finish(): Promise<void> {
@@ -281,7 +278,7 @@ export class StreamBuilder implements Builder {
     }
 }
 
-/** Builder that writes output to a file */
+/** ファイルに出力を書き込むビルダー */
 export class FileBuilder extends StreamBuilder {
     constructor(filePath: string) {
         const stream = fs.createWriteStream(filePath);
@@ -295,7 +292,7 @@ export class FileBuilder extends StreamBuilder {
     }
 }
 
-/** Builder that discards all output (for testing or dry runs) */
+/** すべての出力を破棄するビルダー (テストまたはドライラン用) */
 export class NullBuilder implements Builder {
     addBlock(): void { }
     insertBlockBefore(_id: number): void { }

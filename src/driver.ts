@@ -1,33 +1,33 @@
 /**
- * Driver Module
+ * Driver モジュール
  * 
- * This module provides the Driver class for creating sessions to Copper PDF servers.
+ * このモジュールは、Copper PDFサーバーへのセッションを作成するためのDriverクラスを提供します。
  */
 
 import * as net from 'net';
 import * as tls from 'tls';
 import { Session, SessionOptions } from './session';
 
-/** Extended session options including TLS settings */
+/** TLS設定を含む拡張セッションオプション */
 export interface DriverOptions extends SessionOptions {
-    /** Whether to reject unauthorized SSL certificates (default: true) */
+    /** 不明なSSL証明書を拒否するかどうか (デフォルト: true) */
     rejectUnauthorized?: boolean;
 }
 
-/** Driver for connecting to Copper PDF servers */
+/** Copper PDFサーバーに接続するためのドライバ */
 export class Driver {
     /**
-     * Create a session to a Copper PDF server
-     * @param uri - Server URI (ctip://host:port/ or ctips://host:port/)
-     * @param options - Connection options
-     * @returns A new Session instance
+     * Copper PDFサーバーへのセッションを作成
+     * @param uri - サーバーURI (ctip://host:port/ または ctips://host:port/)
+     * @param options - 接続オプション
+     * @returns 新しいSessionインスタンス
      */
     getSession(uri: string, options: DriverOptions = {}): Session {
         let host = 'localhost';
         let port = 8099;
         let useSSL = false;
 
-        // Simple URI parsing
+        // 簡易URI解析
         // ctip://host:port/
         // ctips://host:port/
 

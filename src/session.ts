@@ -1,7 +1,7 @@
 /**
- * Session Module
+ * Session モジュール
  * 
- * This module provides the Session class for communicating with Copper PDF servers.
+ * このモジュールは、Copper PDFサーバーと通信するためのSessionクラスを提供します。
  */
 
 import { Writable, WritableOptions } from 'stream';
@@ -30,7 +30,7 @@ import {
 import { SingleResult, DirectoryResults, Results } from './results';
 import { StreamBuilder, FileBuilder, Builder } from './builder';
 
-/** Error thrown when an operation is attempted in an invalid session state */
+/** 無効なセッション状態で操作が試行されたときにスローされるエラー */
 export class IllegalStateError extends Error {
     constructor(message: string) {
         super(message);
@@ -38,37 +38,37 @@ export class IllegalStateError extends Error {
     }
 }
 
-/** Message callback function type */
+/** メッセージコールバック関数の型 */
 export type MessageCallback = (code: number, message: string, args: string[]) => void;
 
-/** Progress callback function type */
+/** 進捗コールバック関数の型 */
 export type ProgressCallback = (total: number | null, read: number) => void;
 
-/** Resolver callback function type */
+/** リゾルバコールバック関数の型 */
 export type ResolverCallback = (uri: string, resource: Resource) => void | Promise<void>;
 
-/** Session options interface */
+/** セッションオプション インターフェース */
 export interface SessionOptions {
     user?: string;
     password?: string;
     encoding?: string;
 }
 
-/** Resource options interface */
+/** リソースオプション インターフェース */
 export interface ResourceOptions {
     mime_type?: string;
     encoding?: string;
     length?: number;
 }
 
-/** Transcode options interface */
+/** トランスコードオプション インターフェース */
 export interface TranscodeOptions {
     mimeType?: string;
     encoding?: string;
     length?: number;
 }
 
-/** Writable stream for main document content */
+/** メインドキュメントコンテンツ用の書き込み可能ストリーム */
 class MainOut extends Writable {
     private session: Session;
     private buffer: Buffer;
@@ -132,7 +132,7 @@ class MainOut extends Writable {
     }
 }
 
-/** Writable stream for resource content */
+/** リソースコンテンツ用の書き込み可能ストリーム */
 class ResourceOut extends Writable {
     private session: Session;
     private _closed: boolean = false;
@@ -202,7 +202,7 @@ class ResourceOut extends Writable {
     }
 }
 
-/** Resource request handler */
+/** リソースリクエストハンドラ */
 export class Resource {
     private session: Session;
     public uri: string;
@@ -214,7 +214,7 @@ export class Resource {
         this.uri = uri;
     }
 
-    /** Mark resource as found and get output stream */
+    /** リソースが見つかったことをマークし、出力ストリームを取得する */
     found(opts: ResourceOptions = {}): Writable {
         const mimeType = opts.mime_type || 'text/css';
         const encoding = opts.encoding || '';
@@ -226,7 +226,7 @@ export class Resource {
         return this.out;
     }
 
-    /** Finish resource transmission */
+    /** リソース送信を終了する */
     finish(): void {
         if (this.out) {
             this.out.end();
@@ -234,7 +234,7 @@ export class Resource {
     }
 }
 
-/** Session for communicating with Copper PDF server */
+/** Copper PDFサーバーと通信するためのセッション */
 export class Session {
     public socket: Socket | TLSSocket;
     private options: SessionOptions;
@@ -260,9 +260,9 @@ export class Session {
     private continuous: boolean = false;
 
     /**
-     * Creates a new Session
-     * @param socket - Connected socket
-     * @param options - Session options
+     * 新しいセッションを作成
+     * @param socket - 接続されたソケット
+     * @param options - セッションオプション
      */
     constructor(socket: Socket | TLSSocket, options: SessionOptions = {}) {
         this.socket = socket;
@@ -474,7 +474,7 @@ export class Session {
         }
     }
 
-    /** Send data to the server */
+    /** サーバーにデータを送信 */
     send(data: Buffer): boolean {
         if (this.state >= 3) {
             throw new IllegalStateError("Session is closed");
@@ -498,59 +498,59 @@ export class Session {
 
     // --- Public API ---
 
-    /** Set result handler */
+    /** 結果ハンドラを設定 */
     setResults(results: Results): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.results = results;
     }
 
-    /** Set output to a file */
+    /** 出力をファイルに設定 */
     setOutputAsFile(file: string): void {
         this.setResults(new SingleResult(new FileBuilder(file)));
     }
 
-    /** Set output to a directory with numbered files */
+    /** 出力を番号付きファイルのディレクトリに設定 */
     setOutputAsDirectory(dir: string, prefix: string = '', suffix: string = ''): void {
         this.setResults(new DirectoryResults(dir, prefix, suffix));
     }
 
-    /** Set output to a stream */
+    /** 出力をストリームに設定 */
     setOutputAsStream(stream: Writable): void {
         this.setResults(new SingleResult(new StreamBuilder(stream)));
     }
 
-    /** Set message callback */
+    /** メッセージコールバックを設定 */
     setMessageFunc(func: MessageCallback | null): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.messageFunc = func;
     }
 
-    /** Set progress callback */
+    /** 進捗コールバックを設定 */
     setProgressFunc(func: ProgressCallback | null): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.progressFunc = func;
     }
 
-    /** Set resource resolver callback */
+    /** リソースリゾルバコールバックを設定 */
     setResolverFunc(func: ResolverCallback | null): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.resolverFunc = func;
         this.send(req_client_resource(!!func));
     }
 
-    /** Set continuous mode */
+    /** 連続モードを設定 */
     setContinuous(continuous: boolean): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.send(req_continuous(continuous));
     }
 
-    /** Set a property */
+    /** プロパティを設定 */
     setProperty(name: string, value: string): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.send(req_property(name, value));
     }
 
-    /** Send a resource */
+    /** リソースを送信 */
     resource(uri: string, opts: ResourceOptions = {}): Writable {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         const mimeType = opts.mime_type || 'text/css';
@@ -562,12 +562,13 @@ export class Session {
     }
 
     /**
-     * Start transcoding
-     * @param uri - Document URI
-     * @param opts - Transcode options
-     * @returns Writable stream for document content
+     * トランスコードを開始
+     * @param uri - ドキュメントURI
+     * @param opts - トランスコードオプション
+     * @returns ドキュメントコンテンツ用の書き込み可能ストリーム
      */
     transcode(uri: string = '.', opts: TranscodeOptions = {}): Writable {
+        if (this.state >= 3) throw new IllegalStateError("Session is closed");
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         const mimeType = opts.mimeType || 'text/html';
         const encoding = opts.encoding || 'UTF-8';
@@ -583,12 +584,14 @@ export class Session {
         });
 
         this.send(req_start_main(uri, mimeType, encoding, length));
+        this.state = 2;
 
         return new MainOut(this);
     }
 
-    /** Transcode content from a server URL */
+    /** サーバーURLからコンテンツをトランスコードする */
     transcodeServer(uri: string): void {
+        if (this.state >= 3) throw new IllegalStateError("Session is closed");
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.send(req_server_main(uri));
         this.state = 2;
@@ -598,21 +601,21 @@ export class Session {
         });
     }
 
-    /** Wait for transcoding to complete */
+    /** トランスコードの完了を待機 */
     async waitForCompletion(): Promise<void> {
         if (this.completionPromise) {
             await this.completionPromise;
         }
     }
 
-    /** Abort current transcoding */
+    /** 現在のトランスコードを中断 */
     abort(mode: number): void {
         if (this.state >= 2) {
             this.send(req_abort(mode));
         }
     }
 
-    /** Reset session state */
+    /** セッション状態をリセット */
     reset(): void {
         if (this.state >= 3) throw new IllegalStateError("Session is closed");
         if (this.socket) this.send(req_reset());
@@ -627,7 +630,7 @@ export class Session {
         this.completionPromise = null;
     }
 
-    /** Join multiple documents */
+    /** 複数のドキュメントを結合 */
     join(): void {
         if (this.state >= 3) throw new IllegalStateError("Session is closed");
         this.send(req_join());
@@ -638,7 +641,7 @@ export class Session {
         });
     }
 
-    /** Close the session */
+    /** セッションを閉じる */
     close(): void {
         if (this.state >= 3) return;
         try {

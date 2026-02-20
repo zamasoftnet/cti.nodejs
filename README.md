@@ -1,9 +1,6 @@
 # Copper PDF CTI Driver for Node.js
 
-Node.jsを使ってCopper PDF 2.1以降にアクセスするための公式ドライバです。
-CTIP (Copper Transaction Interlace Protocol) 2.0 に対応しています。
-
-**TypeScriptで実装されており、完全な型定義を提供します。**
+Node.jsを使ってCopper PDF 2.1以降にアクセスするためのドライバです。
 
 ## 動作環境
 
@@ -231,6 +228,34 @@ cti.nodejs/
 └── package.json
 ```
 
+## テストの実行方法
+
+テストにはCopper PDFサーバーへの接続が必要です（インテグレーションテスト）。
+
+1. `test/test-config.json` を作成:
+```json
+{
+  "host": "localhost",
+  "port": 8099,
+  "user": "user",
+  "password": "kappa"
+}
+```
+
+2. テストを実行:
+```bash
+npm test
+```
+
+Ant から実行する場合は、`cti.nodejs` 配下で以下を実行します。
+
+```bash
+ant test
+```
+
+サーバーが起動していない場合、インテグレーションテストは自動的にスキップされます。
+ユニットテスト（builder, session_boundary）はサーバーなしで実行できます。
+
 ## 開発
 
 ```bash
@@ -240,8 +265,27 @@ npm install
 # TypeScriptをコンパイル
 npm run build
 
+# テストを実行
+npm test
+
 # サンプルを実行
 node examples/output-file.js
+```
+
+## ドキュメント生成
+
+TypeDocを使用してAPIドキュメントを生成:
+
+```bash
+npm run doc
+```
+
+生成されたドキュメントは `docs/` ディレクトリに出力されます。
+
+また、Ant から配布アーカイブを生成するには次を実行します。
+
+```bash
+ant dist
 ```
 
 ## ライセンス

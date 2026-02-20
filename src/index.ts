@@ -1,7 +1,7 @@
 /**
- * Copper PDF CTI Driver for Node.js
+ * Node.js用 Copper PDF CTI ドライバ
  * 
- * This module provides the main entry point for the copper-cti package.
+ * このモジュールは、copper-ctiパッケージのメインエントリポイントを提供します。
  */
 
 export { Driver, DriverOptions } from './driver';
@@ -13,12 +13,12 @@ export { MSG, PacketParser, Packet } from './ctip2';
 import { Driver, DriverOptions } from './driver';
 import { Session } from './session';
 
-/** Get a new Driver instance */
+/** 新しいDriverインスタンスを取得 */
 export function get_driver(): Driver {
     return new Driver();
 }
 
-/** Create a session to a Copper PDF server */
+/** Copper PDFサーバーへのセッションを作成 */
 export function get_session(uri: string, options: DriverOptions = {}): Session {
     return new Driver().getSession(uri, options);
 }

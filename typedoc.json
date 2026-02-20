@@ -1,0 +1,11 @@
+{
+    "entryPoints": [
+        "src/index.ts"
+    ],
+    "out": "docs",
+    "plugin": [],
+    "includeVersion": true,
+    "readme": "README.md",
+    "excludePrivate": true,
+    "tsconfig": "tsconfig.json"
+}
