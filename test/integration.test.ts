@@ -1,9 +1,12 @@
 
 import { Driver } from '../src/driver';
 import { Session, IllegalStateError } from '../src/session';
+import { SingleResult } from '../src/results';
+import { NullBuilder } from '../src/builder';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as net from 'net';
+import { Writable } from 'stream';
 
 // 設定ファイルのインターフェース
 interface TestConfig {
@@ -25,11 +28,12 @@ try {
     console.warn('Failed to load test-config.json, skipping integration test.');
 }
 
-import { Writable } from 'stream';
+const DATA_DIR = path.join(__dirname, 'data');
+const OUT_DIR = path.join(__dirname, 'out');
 
 class MemoryWritable extends Writable {
     public buffer: Buffer = Buffer.alloc(0);
-    _write(chunk: any, encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    _write(chunk: any, _enc: BufferEncoding, callback: (error?: Error | null) => void): void {
         this.buffer = Buffer.concat([this.buffer, chunk]);
         callback();
     }
@@ -42,19 +46,9 @@ function canConnect(serverUri: string): Promise<boolean> {
         const port = Number(target.port) || 8099;
         return new Promise((resolve) => {
             const socket = new net.Socket();
-            const timeout = setTimeout(() => {
-                socket.destroy();
-                resolve(false);
-            }, 2000);
-            socket.once('connect', () => {
-                clearTimeout(timeout);
-                socket.destroy();
-                resolve(true);
-            });
-            socket.once('error', () => {
-                clearTimeout(timeout);
-                resolve(false);
-            });
+            const timeout = setTimeout(() => { socket.destroy(); resolve(false); }, 2000);
+            socket.once('connect', () => { clearTimeout(timeout); socket.destroy(); resolve(true); });
+            socket.once('error', () => { clearTimeout(timeout); resolve(false); });
             socket.connect({ host, port });
         });
     } catch (_e) {
@@ -62,9 +56,39 @@ function canConnect(serverUri: string): Promise<boolean> {
     }
 }
 
-// 接続テスト (実際のネットワークアクセスを伴う)
+function createSession(): Session {
+    const driver = new Driver();
+    return driver.getSession(config!.serverUri, {
+        user: config!.user,
+        password: config!.password
+    });
+}
+
+function transcodeHtml(session: Session, outputFile: string): Promise<void> {
+    session.setOutputAsFile(outputFile);
+
+    const cssStream = session.resource('test.css');
+    fs.createReadStream(path.join(DATA_DIR, 'test.css')).pipe(cssStream);
+
+    return new Promise((resolve, reject) => {
+        cssStream.once('finish', () => {
+            const out = session.transcode('test.html', { mimeType: 'text/html' });
+            fs.createReadStream(path.join(DATA_DIR, 'test.html')).pipe(out);
+            out.once('finish', () => {
+                session.waitForCompletion().then(resolve).catch(reject);
+            });
+            out.once('error', reject);
+        });
+        cssStream.once('error', reject);
+    });
+}
+
+function assertPdf(filePath: string): void {
+    const buf = fs.readFileSync(filePath);
+    expect(buf.subarray(0, 4).toString('binary')).toBe('%PDF');
+}
+
 describe('Integration Test', () => {
-    let session: Session;
     let serverAvailable = false;
 
     beforeAll(async () => {
@@ -74,87 +98,167 @@ describe('Integration Test', () => {
         if (!serverAvailable) {
             console.warn('Skipping CTI integration test: server unavailable.');
         }
+        fs.mkdirSync(OUT_DIR, { recursive: true });
     });
 
     beforeEach(() => {
-        // コンソールエラーを抑制 (認証エラーなどは想定内)
         jest.spyOn(console, 'error').mockImplementation(() => { });
     });
 
     afterEach(() => {
         jest.restoreAllMocks();
-        if (session) {
-            session.close();
-        }
     });
 
-    const runTest = config ? test : test.skip;
+    const skipIf = (condition: boolean) => condition ? test.skip : test;
 
-    runTest('サーバーに接続し、PDF生成(トランスコード)を行う', async () => {
-        if (!serverAvailable) {
-            return;
+    skipIf(!config || !serverAvailable)('サーバー接続とセッション作成', async () => {
+        const session = createSession();
+        expect(session).toBeDefined();
+        session.close();
+    }, 10000);
+
+    skipIf(!config || !serverAvailable)('サーバー情報を取得できる', async () => {
+        const session = createSession();
+        try {
+            const info = await session.getServerInfo('http://www.cssj.jp/ns/ctip/version');
+            expect(info).toBeTruthy();
+            expect(info.length).toBeGreaterThan(0);
+        } finally {
+            session.close();
+        }
+    }, 10000);
+
+    skipIf(!config || !serverAvailable)('HTMLをPDFファイルに変換できる', async () => {
+        const outFile = path.join(OUT_DIR, 'nodejs-output-file.pdf');
+        if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
+
+        const session = createSession();
+        try {
+            await transcodeHtml(session, outFile);
+        } finally {
+            session.close();
         }
 
+        assertPdf(outFile);
+    }, 30000);
+
+    skipIf(!config || !serverAvailable)('出力ディレクトリに画像ファイルを生成できる', async () => {
+        const outputDir = path.join(OUT_DIR, 'output-dir');
+        fs.mkdirSync(outputDir, { recursive: true });
+        for (const f of fs.readdirSync(outputDir)) {
+            fs.unlinkSync(path.join(outputDir, f));
+        }
+
+        const session = createSession();
+        try {
+            session.setProperty('output.type', 'image/jpeg');
+            session.setOutputAsDirectory(outputDir, '', '.jpg');
+            const out = session.transcode('test.html', { mimeType: 'text/html' });
+            fs.createReadStream(path.join(DATA_DIR, 'test.html')).pipe(out);
+            out.once('error', (e) => { throw e; });
+            await session.waitForCompletion();
+        } finally {
+            session.close();
+        }
+
+        const jpgs = fs.readdirSync(outputDir).filter(f => f.toLowerCase().endsWith('.jpg'));
+        expect(jpgs.length).toBeGreaterThan(0);
+    }, 30000);
+
+    skipIf(!config || !serverAvailable)('プロパティを設定してPDF変換できる', async () => {
+        const output = new MemoryWritable();
+        const session = createSession();
+        try {
+            session.setProperty('output.pdf.version', '1.5');
+            session.setOutputAsStream(output);
+            const out = session.transcode('test.html', { mimeType: 'text/html' });
+            fs.createReadStream(path.join(DATA_DIR, 'test.html')).pipe(out);
+            await session.waitForCompletion();
+        } finally {
+            session.close();
+        }
+
+        expect(output.buffer.subarray(0, 4).toString('binary')).toBe('%PDF');
+    }, 30000);
+
+    skipIf(!config || !serverAvailable)('リゾルバコールバックが呼ばれてリソースを解決できる', async () => {
+        const outFile = path.join(OUT_DIR, 'nodejs-resolver.pdf');
+        if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
+
+        let resolved = false;
+        const session = createSession();
+        try {
+            session.setResolverFunc(async (uri, resource) => {
+                if (uri === 'test.css') {
+                    resolved = true;
+                    const out = resource.found();
+                    await new Promise<void>((resolve, reject) => {
+                        fs.createReadStream(path.join(DATA_DIR, 'test.css')).pipe(out);
+                        out.once('finish', resolve);
+                        out.once('error', reject);
+                    });
+                }
+            });
+            session.setOutputAsFile(outFile);
+            const out = session.transcode('test.html', { mimeType: 'text/html' });
+            fs.createReadStream(path.join(DATA_DIR, 'test.html')).pipe(out);
+            await session.waitForCompletion();
+        } finally {
+            session.close();
+        }
+
+        expect(resolved).toBe(true);
+        assertPdf(outFile);
+    }, 30000);
+
+    skipIf(!config || !serverAvailable)('進行状況コールバックが呼ばれる', async () => {
+        const progress: Array<[number | null, number]> = [];
+        const session = createSession();
+        try {
+            session.setResults(new SingleResult(new NullBuilder()));
+            session.setProgressFunc((total, read) => { progress.push([total, read]); });
+            session.setProperty('input.include', 'https://www.w3.org/**');
+            session.transcodeServer('https://www.w3.org/TR/xslt-10/');
+            await session.waitForCompletion();
+        } finally {
+            session.close();
+        }
+
+        expect(progress.length).toBeGreaterThan(0);
+    }, 60000);
+
+    skipIf(!config || !serverAvailable)('リセット後に再変換できる', async () => {
+        const out1 = path.join(OUT_DIR, 'nodejs-reset-1.pdf');
+        const out2 = path.join(OUT_DIR, 'nodejs-reset-2.pdf');
+        for (const f of [out1, out2]) {
+            if (fs.existsSync(f)) fs.unlinkSync(f);
+        }
+
+        const session = createSession();
+        try {
+            await transcodeHtml(session, out1);
+            session.reset();
+            await transcodeHtml(session, out2);
+        } finally {
+            session.close();
+        }
+
+        assertPdf(out1);
+        assertPdf(out2);
+    }, 60000);
+
+    skipIf(!config)('認証失敗時に例外がスローされる', async () => {
         const driver = new Driver();
-        const uri = config!.serverUri;
-
-        console.log(`Testing with config: ${JSON.stringify(config)}`);
-
-        session = driver.getSession(uri, {
-            user: config!.user,
-            password: config!.password
+        const session = driver.getSession(config!.serverUri, {
+            user: 'invalid-user',
+            password: 'invalid-password'
         });
 
-        // PDFの出力先をメモリバッファにする
-        const output = new MemoryWritable();
-        session.setOutputAsStream(output);
+        const out = session.transcode('test.html');
+        out.write(Buffer.from('<html><body><p>test</p></body></html>'));
+        out.end();
 
-        const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Test PDF</title>
-            <style>
-                body { font-family: sans-serif; }
-                h1 { color: blue; }
-            </style>
-        </head>
-        <body>
-            <h1>Hello, Copper PDF!</h1>
-            <p>This is a test document generated via cti.nodejs integration test.</p>
-        </body>
-        </html>
-        `;
-
-        try {
-            // test.html としてトランスコードを開始
-            // 注意: transcode() が返すのはサーバーへ送るデータの入力ストリーム (MainOut)
-            const inputStream = session.transcode('test.html');
-
-            // HTMLコンテンツをサーバーへ送信
-            inputStream.write(Buffer.from(htmlContent));
-            inputStream.end();
-
-            console.log('Transcoding started, waiting for completion...');
-
-            // トランスコード完了(レスポンス受信完了)を待機
-            await session.waitForCompletion();
-
-            console.log(`Transcoding finished. Received PDF size: ${output.buffer.length} bytes`);
-
-            // データが受信できているか確認
-            if (output.buffer.length === 0) {
-                throw new Error('データを受信できませんでした (0 bytes)');
-            }
-
-            // PDFヘッダーのチェック (%PDF-...)
-            const header = output.buffer.subarray(0, 5).toString();
-            if (header !== '%PDF-') {
-                throw new Error(`Invalid PDF header: ${header}`);
-            }
-
-        } catch (e) {
-            throw e;
-        }
-    }, 30000); // 30秒タイムアウト
+        await expect(session.waitForCompletion()).rejects.toThrow();
+        session.close();
+    }, 10000);
 });

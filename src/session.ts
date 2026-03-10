@@ -258,6 +258,8 @@ export class Session {
     private _resolveCompletion: (() => void) | null = null;
     private _rejectCompletion: ((err: Error) => void) | null = null;
     private continuous: boolean = false;
+    private _serverInfoCollect: Buffer[] | null = null;
+    private _serverInfoResolve: ((info: string) => void) | null = null;
 
     /**
      * 新しいセッションを作成
@@ -379,7 +381,9 @@ export class Session {
                 break;
 
             case MSG.RES_DATA:
-                if (this.builder && res.bytes) {
+                if (this._serverInfoCollect !== null) {
+                    if (res.bytes) this._serverInfoCollect.push(res.bytes);
+                } else if (this.builder && res.bytes) {
                     await this.builder.serialWrite(res.bytes);
                 }
                 break;
@@ -427,15 +431,24 @@ export class Session {
                 break;
 
             case MSG.RES_EOF:
-                if (this.builder) {
-                    await this.builder.finish();
-                    await this.builder.dispose();
-                    this.builder = null;
+                if (this._serverInfoCollect !== null) {
+                    const info = Buffer.concat(this._serverInfoCollect).toString('utf-8');
+                    this._serverInfoCollect = null;
+                    if (this._serverInfoResolve) {
+                        this._serverInfoResolve(info);
+                        this._serverInfoResolve = null;
+                    }
+                } else {
+                    if (this.builder) {
+                        await this.builder.finish();
+                        await this.builder.dispose();
+                        this.builder = null;
+                    }
+                    this._doResolveCompletion();
+                    this.mainLength = null;
+                    this.mainRead = 0;
+                    this.state = 1;
                 }
-                this._doResolveCompletion();
-                this.mainLength = null;
-                this.mainRead = 0;
-                this.state = 1;
                 break;
 
             case MSG.RES_NEXT:
@@ -550,6 +563,15 @@ export class Session {
         this.send(req_property(name, value));
     }
 
+    /** サーバー情報を取得 */
+    async getServerInfo(uri: string): Promise<string> {
+        return new Promise<string>((resolve) => {
+            this._serverInfoCollect = [];
+            this._serverInfoResolve = resolve;
+            this.send(req_server_info(uri));
+        });
+    }
+
     /** リソースを送信 */
     resource(uri: string, opts: ResourceOptions = {}): Writable {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
@@ -576,7 +598,6 @@ export class Session {
 
         this.mainLength = null;
         this.mainRead = 0;
-        this.builder = null;
 
         this.completionPromise = new Promise<void>((resolve, reject) => {
             this._resolveCompletion = resolve;

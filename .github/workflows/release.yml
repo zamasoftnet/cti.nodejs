@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Generate API docs
+        run: npm run doc || true
+
+      - name: Create dist
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DIRNAME="copper-cti-nodejs-${VERSION}"
+          STAGEDIR="build/${DIRNAME}"
+          mkdir -p "${STAGEDIR}"
+          sed "s/@version@/${VERSION}/g" README.md > "${STAGEDIR}/README.md"
+          cp -r dist src "${STAGEDIR}/"
+          cp -r docs "${STAGEDIR}/" 2>/dev/null || true
+          cp -r examples "${STAGEDIR}/" 2>/dev/null || true
+          cp -r test "${STAGEDIR}/" 2>/dev/null || true
+          cp package.json package-lock.json tsconfig.json jest.config.js "${STAGEDIR}/"
+          cp typedoc.json "${STAGEDIR}/" 2>/dev/null || true
+          cp jsdoc.json "${STAGEDIR}/" 2>/dev/null || true
+          cp LICENSE-2.0.txt "${STAGEDIR}/" 2>/dev/null || true
+          # Create archives
+          cd build
+          zip -r "${DIRNAME}.zip" "${DIRNAME}"
+          tar czf "${DIRNAME}.tar.gz" "${DIRNAME}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/copper-cti-nodejs-*.zip
+            build/copper-cti-nodejs-*.tar.gz

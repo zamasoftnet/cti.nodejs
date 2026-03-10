@@ -20,5 +20,5 @@ output/
 *.tmp
 build/
 coverage/
-test/config*.json
+test/test-config.json
 .nyc_output/

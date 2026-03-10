@@ -1,0 +1,40 @@
+@media screen,print {
+body {
+  font-size: 10pt;
+  font-family: "MS PMincho" serif;
+}
+table {
+  border-collapse: collapse;
+  border: 1pt solid Black;
+}
+table caption {
+  font-size: 18pt;
+  white-space: nowrap;
+}
+table th {
+  background-color: LightGrey;
+  white-space: nowrap;
+  border: 1pt solid Black;
+  padding: 2pt;
+}
+table td {
+  border: 1pt dotted Black;
+  padding: 2pt;
+  vertical-align: top;
+}
+table th.sub-header {
+  background-color: LightBlue;
+  text-align: left;
+}
+.money {
+  text-align: right;
+  white-space: nowrap;
+  font-family: "MS Mincho" monospace;
+}
+.nowrap {
+  white-space: nowrap;
+}
+.para:first-letter {
+  margin-left: 1em;
+}
+}
