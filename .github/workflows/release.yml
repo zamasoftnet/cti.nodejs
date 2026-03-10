@@ -29,7 +29,7 @@ jobs:
       - name: Create dist
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          DIRNAME="copper-cti-nodejs-${VERSION}"
+          DIRNAME="cti-nodejs-${VERSION}"
           STAGEDIR="build/${DIRNAME}"
           mkdir -p "${STAGEDIR}"
           sed "s/@version@/${VERSION}/g" README.md > "${STAGEDIR}/README.md"
@@ -50,5 +50,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/copper-cti-nodejs-*.zip
-            build/copper-cti-nodejs-*.tar.gz
+            build/cti-nodejs-*.zip
+            build/cti-nodejs-*.tar.gz
