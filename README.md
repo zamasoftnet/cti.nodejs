@@ -2,6 +2,10 @@
 
 Node.jsを使ってCopper PDF 2.1以降にアクセスするためのドライバです。
 
+## API ドキュメント
+
+- **オンライン (TypeDoc)**: https://zamasoftnet.github.io/cti.nodejs/
+
 ## 動作環境
 
 * Node.js 14以降
