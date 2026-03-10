@@ -52,3 +52,9 @@ jobs:
           files: |
             build/cti-nodejs-*.zip
             build/cti-nodejs-*.tar.gz
+
+      - name: Deploy API docs to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs
