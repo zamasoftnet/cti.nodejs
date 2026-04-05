@@ -15,7 +15,7 @@ Node.jsを使ってCopper PDF 2.1以降にアクセスするためのドライ�
 ### Gitリポジトリからインストール
 
 ```bash
-npm install https://github.com/mimidesunya/cti.nodejs.git
+npm install https://github.com/zamasoftnet/cti.nodejs.git
 ```
 
 ## 使い方

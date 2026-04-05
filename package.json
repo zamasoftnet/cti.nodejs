@@ -22,7 +22,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mimidesunya/cti.nodejs.git"
+    "url": "https://github.com/zamasoftnet/cti.nodejs.git"
   },
   "engines": {
     "node": ">=14.0.0"
