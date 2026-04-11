@@ -8,13 +8,26 @@ import * as net from 'net';
 import * as tls from 'tls';
 import { Session, SessionOptions } from './session';
 
-/** TLS設定を含む拡張セッションオプション */
+/**
+ * 接続先サーバーの TLS 設定を含む拡張セッションオプション。
+ * `SessionOptions` の全フィールドを継承し、`ctips://` URI 使用時に追加で設定できる。
+ */
 export interface DriverOptions extends SessionOptions {
     /** 不明なSSL証明書を拒否するかどうか (デフォルト: true) */
     rejectUnauthorized?: boolean;
 }
 
-/** Copper PDFサーバーに接続するためのドライバ */
+/**
+ * Copper PDF サーバーへの接続を展開して `Session` を作成するドライバークラス。
+ *
+ * CTIP (`ctip://`) および CTIPS (`ctips://`) の両方の URI スキームに対応する。
+ * URI にはホスト名・ポート番号は省略可能で、それぞれデフォルト `localhost` / `8099` を使用する。
+ *
+ * @example
+ * ```ts
+ * const session = new Driver().getSession('ctip://localhost:8099/');
+ * ```
+ */
 export class Driver {
     /**
      * Copper PDFサーバーへのセッションを作成

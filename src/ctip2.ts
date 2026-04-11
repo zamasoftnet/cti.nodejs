@@ -41,18 +41,29 @@ export const MSG = {
     CTI_BUFFER_SIZE: 8192
 } as const;
 
-/** レスポンスパケット インターフェース */
+/** サーバーから受信した CTIP2 レスポンスパケットを表すインターフェース */
 export interface Packet {
+    /** レスポンスタイプ (`MSG.RES_*` 定数のいずれか) */
     type: number;
+    /** ドキュメントまたはリソースの URI */
     uri?: string;
+    /** コンテンツの MIME タイプ (例: `text/html`, `text/css`) */
     mime_type?: string;
+    /** コンテンツのエンコーディング (例: `UTF-8`) */
     encoding?: string;
+    /** コンテンツの全体バイト長。不明の場合は -1 */
     length?: number;
+    /** ブロック操作の対象ブロック ID */
     block_id?: number;
+    /** メッセージまたは中断コード */
     code?: number;
+    /** メッセージ本文 */
     message?: string;
+    /** メッセージの追加引数 */
     args?: string[];
+    /** ブロックデータまたはシリアルデータのバイナリペイロード */
     bytes?: Buffer;
+    /** 中断モード (`RES_ABORT` のみ: 0 = 出力フラッシュ後中断、それ以外 = 即時中断) */
     mode?: number;
 }
 
@@ -88,7 +99,11 @@ function writeLong(buf: Buffer, offset: number, value: number): number {
 
 // --- リクエスト生成 ---
 
-/** サーバー情報リクエストパケットを生成 */
+/**
+ * サーバー情報取得リクエストパケットを生成する。
+ * @param uri - 情報取得対象の URI。空文字列でサーバー機能一覧を要求できる
+ * @returns エンコード済みの `REQ_SERVER_INFO` フレーム
+ */
 export function req_server_info(uri: string): Buffer {
     const uriBuf = Buffer.from(uri, 'utf8');
     const payloadSize = 1 + 2 + uriBuf.length;
@@ -101,7 +116,12 @@ export function req_server_info(uri: string): Buffer {
     return buf;
 }
 
-/** クライアントリソースモードリクエストパケットを生成 */
+/**
+ * クライアントサイドリソース解決の有効/無効をサーバーに通知するパケットを生成する。
+ * `Session.setResolverFunc()` が呼ばれたときに内部から使用される。
+ * @param mode - `true` でクライアントリソースモードを有効化
+ * @returns エンコード済みの `REQ_CLIENT_RESOURCE` フレーム
+ */
 export function req_client_resource(mode: boolean): Buffer {
     const payloadSize = 2;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -112,7 +132,12 @@ export function req_client_resource(mode: boolean): Buffer {
     return buf;
 }
 
-/** 連続モードリクエストパケットを生成 */
+/**
+ * 連続トランスコードモードの有効/無効をサーバーに通知するパケットを生成する。
+ * 有効にすると、同一セッションで複数回の `transcode()` が可能になる。
+ * @param mode - `true` で連続モードを有効化
+ * @returns エンコード済みの `REQ_CONTINUOUS` フレーム
+ */
 export function req_continuous(mode: boolean): Buffer {
     const payloadSize = 2;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -123,7 +148,12 @@ export function req_continuous(mode: boolean): Buffer {
     return buf;
 }
 
-/** リソース欠落通知パケットを生成 */
+/**
+ * 指定 URI のリソースが存在しないことをサーバーに通知するパケットを生成する。
+ * `ResolverCallback` でリソースが見つからなかった場合に自動的に送信される。
+ * @param uri - 見つからなかったリソースの URI
+ * @returns エンコード済みの `REQ_MISSING_RESOURCE` フレーム
+ */
 export function req_missing_resource(uri: string): Buffer {
     const uriBuf = Buffer.from(uri, 'utf8');
     const payloadSize = 1 + 2 + uriBuf.length;
@@ -135,7 +165,11 @@ export function req_missing_resource(uri: string): Buffer {
     return buf;
 }
 
-/** リセットリクエストパケットを生成 */
+/**
+ * セッション状態をリセットするパケットを生成する。
+ * 連続モード中に次のトランスコードへ移行する前に送信される。
+ * @returns エンコード済みの `REQ_RESET` フレーム
+ */
 export function req_reset(): Buffer {
     const payloadSize = 1;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -145,7 +179,11 @@ export function req_reset(): Buffer {
     return buf;
 }
 
-/** 中断リクエストパケットを生成 */
+/**
+ * 進行中のトランスコードを中断するパケットを生成する。
+ * @param mode - 中断モード。`0` = 現在の出力をフラッシュして中断、それ以外 = 即時中断
+ * @returns エンコード済みの `REQ_ABORT` フレーム
+ */
 export function req_abort(mode: number): Buffer {
     const payloadSize = 2;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -156,7 +194,10 @@ export function req_abort(mode: number): Buffer {
     return buf;
 }
 
-/** 結合リクエストパケットを生成 */
+/**
+ * 連続モードで送信済みの複数ドキュメントをサーバー側で結合するパケットを生成する。
+ * @returns エンコード済みの `REQ_JOIN` フレーム
+ */
 export function req_join(): Buffer {
     const payloadSize = 1;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -166,7 +207,10 @@ export function req_join(): Buffer {
     return buf;
 }
 
-/** EOFリクエストパケットを生成 */
+/**
+ * 現在送信中のコンテンツ (メインまたはリソース) の終端を通知するパケットを生成する。
+ * @returns エンコード済みの `REQ_EOF` フレーム
+ */
 export function req_eof(): Buffer {
     const payloadSize = 1;
     const buf = Buffer.alloc(4 + payloadSize);
@@ -176,7 +220,12 @@ export function req_eof(): Buffer {
     return buf;
 }
 
-/** プロパティ設定リクエストパケットを生成 */
+/**
+ * トランスコード制御プロパティをサーバーに送信するパケットを生成する。
+ * @param name - プロパティ名 (エンコーディングは UTF-8)
+ * @param value - プロパティ値 (エンコーディングは UTF-8)
+ * @returns エンコード済みの `REQ_PROPERTY` フレーム
+ */
 export function req_property(name: string, value: string): Buffer {
     const nameBuf = Buffer.from(name, 'utf8');
     const valBuf = Buffer.from(value, 'utf8');
@@ -190,7 +239,12 @@ export function req_property(name: string, value: string): Buffer {
     return buf;
 }
 
-/** サーバーメインリクエストパケットを生成 */
+/**
+ * サーバー内の URI を直接メインドキュメントとして指定するパケットを生成する。
+ * クライアントからコンテンツを送信せず、サーバー側でコンテンツを取得する。
+ * @param uri - サーバー内ドキュメントの URI
+ * @returns エンコード済みの `REQ_SERVER_MAIN` フレーム
+ */
 export function req_server_main(uri: string): Buffer {
     const uriBuf = Buffer.from(uri, 'utf8');
     const payloadSize = 1 + 2 + uriBuf.length;
@@ -202,7 +256,15 @@ export function req_server_main(uri: string): Buffer {
     return buf;
 }
 
-/** リソース開始リクエストパケットを生成 */
+/**
+ * リソースデータ送信開始を通知するパケットを生成する。
+ * このパケット送信後、`req_data()` でコンテンツを送り、`req_eof()` で終端を通知する。
+ * @param uri - リソースの URI
+ * @param mimeType - コンテンツの MIME タイプ (デフォルト: `text/css`)
+ * @param encoding - コンテンツのエンコーディング (デフォルト: 空文字列)
+ * @param length - コンテンツのバイト長。不明の場合は `-1`
+ * @returns エンコード済みの `REQ_START_RESOURCE` フレーム
+ */
 export function req_start_resource(
     uri: string,
     mimeType: string = 'text/css',
@@ -224,7 +286,15 @@ export function req_start_resource(
     return buf;
 }
 
-/** メイン開始リクエストパケットを生成 */
+/**
+ * メインドキュメントのトランスコード開始を通知するパケットを生成する。
+ * このパケット送信後、`req_data()` でコンテンツを送り、`req_eof()` で終端を通知する。
+ * @param uri - ドキュメントの URI (ベース URI として使用される)
+ * @param mimeType - コンテンツの MIME タイプ (デフォルト: `text/html`)
+ * @param encoding - コンテンツのエンコーディング (デフォルト: `UTF-8`)
+ * @param length - コンテンツのバイト長。不明の場合は `-1`
+ * @returns エンコード済みの `REQ_START_MAIN` フレーム
+ */
 export function req_start_main(
     uri: string,
     mimeType: string = 'text/html',
@@ -246,7 +316,12 @@ export function req_start_main(
     return buf;
 }
 
-/** データリクエストパケットを生成 */
+/**
+ * コンテンツチャンクを運ぶデータパケットを生成する。
+ * `req_start_main()` または `req_start_resource()` 後に繰り返し呼び出す。
+ * @param data - 送信するバイナリデータまたは文字列 (文字列の場合は UTF-8 エンコード)
+ * @returns エンコード済みの `REQ_DATA` フレーム
+ */
 export function req_data(data: Buffer | string): Buffer {
     const dBuf = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
     const payloadSize = 1 + dBuf.length;
@@ -258,7 +333,10 @@ export function req_data(data: Buffer | string): Buffer {
     return buf;
 }
 
-/** 終了リクエストパケットを生成 */
+/**
+ * セッションを終了してサーバーとの接続を閉じるパケットを生成する。
+ * @returns エンコード済みの `REQ_CLOSE` フレーム
+ */
 export function req_close(): Buffer {
     return req_simple(MSG.REQ_CLOSE);
 }
@@ -274,39 +352,67 @@ function req_simple(type: number): Buffer {
 
 // --- パケット解析 ---
 
-/** バッファ読み込みヘルパークラス */
+/**
+ * バイナリバッファを順番に読み進めるためのヘルパークラス。
+ * CTIP2 パケットのデシリアライズに内部的に使用される。
+ */
 class BufferReader {
     private buffer: Buffer;
+    /** 現在の読み取りオフセット (バイト単位) */
     public offset: number = 0;
 
+    /**
+     * @param buffer - 読み取り元のバッファ
+     */
     constructor(buffer: Buffer) {
         this.buffer = buffer;
     }
 
+    /**
+     * 現在位置から 1 バイトを符号なし整数として読み取り、オフセットを進める。
+     * @returns 読み取った 0〜255 の値
+     */
     readByte(): number {
         const v = this.buffer.readUInt8(this.offset);
         this.offset += 1;
         return v;
     }
 
+    /**
+     * 現在位置から 2 バイトをビッグエンディアン符号なし整数として読み取る。
+     * @returns 読み取った 0〜65535 の値
+     */
     readShort(): number {
         const v = this.buffer.readUInt16BE(this.offset);
         this.offset += 2;
         return v;
     }
 
+    /**
+     * 現在位置から 4 バイトをビッグエンディアン符号なし整数として読み取る。
+     * @returns 読み取った 32bit 非負整数
+     */
     readInt(): number {
         const v = this.buffer.readUInt32BE(this.offset);
         this.offset += 4;
         return v;
     }
 
+    /**
+     * 現在位置から 8 バイトをビッグエンディアン符号付き整数として読み取る。
+     * JavaScript の `number` 精度の範囲内で返す。
+     * @returns 読み取った 64bit 整数 (number に変換済み)
+     */
     readLong(): number {
         const v = this.buffer.readBigInt64BE(this.offset);
         this.offset += 8;
         return Number(v);
     }
 
+    /**
+     * 現在位置から 2 バイトの長さプレフィックスを読み取り、その長さ分のバイト列を返す。
+     * @returns 読み取ったバイト列
+     */
     readBytes(): Buffer {
         const len = this.readShort();
         const b = this.buffer.subarray(this.offset, this.offset + len);
@@ -314,31 +420,56 @@ class BufferReader {
         return b;
     }
 
+    /**
+     * 長さプレフィックス付きバイト列を UTF-8 文字列として読み取る。
+     * @returns デコードされた文字列
+     */
     readString(): string {
         return this.readBytes().toString('utf8');
     }
 
+    /**
+     * 現在位置から指定バイト数を生バイト列として読み取る。
+     * @param len - 読み取るバイト数
+     * @returns 読み取ったバイト列
+     */
     readRaw(len: number): Buffer {
         const b = this.buffer.subarray(this.offset, this.offset + len);
         this.offset += len;
         return b;
     }
 
+    /**
+     * バッファ末尾までの残りバイト数を返す。
+     */
     get remaining(): number {
         return this.buffer.length - this.offset;
     }
 }
 
-/** CTIP2 プロトコルレスポンスのパケットパーサー */
+/**
+ * CTIP2 プロトコルレスポンスのストリーミングパケットパーサー。
+ * ソケットから断片的に届くバイナリデータを内部バッファに蓄積し、
+ * 完全なパケットが揃ったタイミングで `next()` から取り出せる。
+ */
 export class PacketParser {
     private buffer: Buffer = Buffer.alloc(0);
 
-    /** 内部バッファにデータを追加 */
+    /**
+     * 受信したバイナリデータを内部バッファに追記する。
+     * ソケットの `data` イベントハンドラから呼び出す。
+     * @param data - ソケットから受信したバイナリチャンク
+     */
     append(data: Buffer): void {
         this.buffer = Buffer.concat([this.buffer, data]);
     }
 
-    /** 次に利用可能なパケットを解析して返す。不完全な場合はnullを返す */
+    /**
+     * 内部バッファから次の完全なパケットを取り出して解析する。
+     * パケットが揃っていない場合は `null` を返す。
+     * 複数のパケットが蓄積されている場合は繰り返し呼び出すこと。
+     * @returns 解析済みの `Packet`、またはデータ不足の場合は `null`
+     */
     next(): Packet | null {
         if (this.buffer.length < 4) {
             return null;

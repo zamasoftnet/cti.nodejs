@@ -19,7 +19,14 @@ const ON_MEMORY = 1024 * 1024;
 /** 一時ファイルストレージのセグメントサイズ */
 const SEGMENT_SIZE = 8192;
 
-/** 出力チャンクを管理するためのフラグメントデータ構造 */
+/**
+ * PDF 出力チャンクを保持する内部データ構造。
+ *
+ * 小さなチャンクはメモリ上の `buffer` に保持し、
+ * `FRG_MEM_SIZE` 超過または全体のメモリ使用量が `ON_MEMORY` を超えた場合は
+ * `StreamBuilder` の一時ファイルにセグメント単位で書き出す。
+ * 双方向リンクリストでフラグメント同士を連結する。
+ */
 class Fragment {
     id: number;
     prev: Fragment | null = null;
@@ -147,19 +154,74 @@ class Fragment {
 
 /** 出力構築用のビルダーインターフェース */
 export interface Builder {
+    /**
+     * 出力チェーンの末尾に新しいブロックを追加する。
+     * ブロックはサーバーから受信したチャンクデータを保持するコンテナであり、
+     * `write()` で書き込み、`finish()` 時にストリームへ順番に出力される。
+     */
     addBlock(): void;
+
+    /**
+     * 指定したブロックの直前に新しいブロックを挿入する。
+     * サーバーが RES_INSERT_BLOCK を送信した場合に呼び出される。
+     * @param anchorId - 挿入基準となる既存ブロックの ID
+     */
     insertBlockBefore(anchorId: number): void;
+
+    /**
+     * 指定ブロックにデータを書き込む。
+     * メモリもしくは一時ファイルへの書き込みを透過的に処理する。
+     * @param id - 書き込み先ブロックの ID
+     * @param data - 書き込むバイナリデータ
+     */
     write(id: number, data: Buffer): Promise<void>;
+
+    /**
+     * 指定ブロックを閉じる。
+     * 実装によっては何も行わない場合がある。
+     * @param id - 閉じるブロックの ID
+     */
     closeBlock(id: number): void;
+
+    /**
+     * データをフラグメント管理を介さず出力ストリームに直接シリアルに書き込む。
+     * RES_DATA パケット (フラグメント外データ) の処理に使用される。
+     * @param data - 書き込むバイナリデータ
+     */
     serialWrite(data: Buffer): Promise<void>;
+
+    /**
+     * すべてのフラグメントを出力ストリームへ順番にフラッシュし、
+     * トランスコードの完了を確定させる。
+     * 呼び出し後はリソースを解放するため `dispose()` も呼ぶこと。
+     */
     finish(): Promise<void>;
+
+    /**
+     * バッファや一時ファイルを含む全リソースを解放する。
+     * `finish()` 後、またはエラー発生時に必ず呼び出すこと。
+     */
     dispose(): Promise<void>;
 }
 
-/** 完了コールバック関数の型 */
+/**
+ * トランスコード完了時に PDF 全体長を受け取るコールバック関数の型。
+ * `StreamBuilder` のコンストラクタで渡すことができ、
+ * `finish()` 実行前に結果のバイト長を参照するような用途 (例: HTTP `Content-Length` ヘッダの設定) に使用する。
+ * @param totalLength - フラッシュ完了時の結果全体バイト長
+ */
 export type FinishCallback = (totalLength: number) => Promise<void> | void;
 
-/** ストリームに出力を書き込むビルダー */
+/**
+ * フラグメントベースのストリーム書き込みビルダー。
+ *
+ * サーバーからの `RES_ADD_BLOCK` / `RES_INSERT_BLOCK` / `RES_BLOCK_DATA` に応じて
+ * `Fragment` リストを構築し、`finish()` 時に順序どおりに出力ストリームへフラッシュする。
+ *
+ * 小さなデータはメモリ上で保持し、閉じきい場合は OS の一時ファイルへスピルアウトする。
+ * HTTP レスポンスストリームなどが完了前に `Content-Length` を記載したい場合は
+ * `FinishCallback` を渡してそのタイミングでヘッダ添付できる。
+ */
 export class StreamBuilder implements Builder {
     protected out: Writable;
     protected finishFunc: FinishCallback | null;
@@ -186,17 +248,35 @@ export class StreamBuilder implements Builder {
         }
     }
 
+    /**
+     * 一時ファイルの指定位置にバッファを書き込む。
+     * ファイルが存在しない場合は自動的に作成される。
+     * Fragment クラスがディスクへのスピルアウト時に内部から呼び出す。
+     * @param buffer - 書き込むデータ
+     * @param position - ファイル内の書き込み開始バイト位置
+     */
     async writeToTempFile(buffer: Buffer, position: number): Promise<void> {
         await this._ensureTempFile();
         await this.fd!.write(buffer, 0, buffer.length, position);
     }
 
+    /**
+     * 一時ファイルの指定位置からデータを読み込む。
+     * 一時ファイルが未作成の場合は 0 を返す。
+     * @param buffer - 読み込んだデータを格納するバッファ
+     * @param position - ファイル内の読み込み開始バイト位置
+     * @returns 実際に読み込んだバイト数
+     */
     async readFromTempFile(buffer: Buffer, position: number): Promise<number> {
         if (!this.fd) return 0;
         const { bytesRead } = await this.fd.read(buffer, 0, buffer.length, position);
         return bytesRead;
     }
 
+    /**
+     * 出力チェーンの末尾に新しいフラグメント (ブロック) を追加する。
+     * 追加されたブロックの ID は `frgs` 配列のインデックスで管理される。
+     */
     addBlock(): void {
         const id = this.frgs.length;
         const frg = new Fragment(id);
@@ -211,6 +291,11 @@ export class StreamBuilder implements Builder {
         this.last = frg;
     }
 
+  /**
+   * 指定した既存ブロックの直前に新しいフラグメントを挿入する。
+   * 双方向リンクリストのポインタを更新してフラグメント順序を調整する。
+   * @param anchorId - 挿入基準となる既存ブロックの ID
+   */
   insertBlockBefore(anchorId: number): void {
     const id = this.frgs.length;
     const frg = new Fragment(id);
@@ -228,6 +313,12 @@ export class StreamBuilder implements Builder {
     }
   }
 
+    /**
+     * 指定 ID のフラグメントにデータを書き込む。
+     * フラグメントのメモリ使用量に応じて、自動的にディスクへスピルアウトする。
+     * @param id - 書き込み先フラグメントの ID
+     * @param data - 書き込むバイナリデータ
+     */
     async write(id: number, data: Buffer): Promise<void> {
         const frg = this.frgs[id];
         const delta = await frg.write(this, data, this.onMemory);
@@ -235,16 +326,31 @@ export class StreamBuilder implements Builder {
         this.totalLength += data.length;
     }
 
+    /**
+     * データをフラグメント管理を介さず出力ストリームへ直接書き込む。
+     * ストリームのバックプレッシャーを考慮して `drain` イベントを待機する。
+     * @param data - 書き込むバイナリデータ
+     */
     async serialWrite(data: Buffer): Promise<void> {
         if (!this.out.write(data)) {
             await new Promise<void>(resolve => this.out.once('drain', resolve));
         }
     }
 
+    /**
+     * 指定ブロックを閉じる。
+     * `StreamBuilder` では使用しないため何も行わない。
+     * @param _id - 閉じるブロックの ID (未使用)
+     */
     closeBlock(_id: number): void {
         // 何もしない
     }
 
+    /**
+     * すべてのフラグメントを順番に出力ストリームへフラッシュする。
+     * `finishFunc` が設定されている場合は先に呼び出す。
+     * 処理後は一時ファイルを削除してリソースを解放する。
+     */
     async finish(): Promise<void> {
         try {
             if (this.finishFunc) {
@@ -261,6 +367,10 @@ export class StreamBuilder implements Builder {
         }
     }
 
+    /**
+     * フラグメント配列と一時ファイルを解放する。
+     * エラー発生時にもリソースリークが発生しないよう必ず呼び出すこと。
+     */
     async dispose(): Promise<void> {
         await this.disposeTemp();
         this.frgs = [];
@@ -278,13 +388,26 @@ export class StreamBuilder implements Builder {
     }
 }
 
-/** ファイルに出力を書き込むビルダー */
+/**
+ * 指定ファイルパスへ PDF 出力を書き込むビルダー。
+ *
+ * `StreamBuilder` を継承して内部で `fs.WriteStream` を作成する。
+ * `finish()` 完了後にストリームを自動的に閉じるため、呼び出し元でのファイルクローズは不要。
+ */
 export class FileBuilder extends StreamBuilder {
+    /**
+     * 指定ファイルパスへ書き込む `FileBuilder` を作成する。
+     * @param filePath - 出力先ファイルの絶対パスまたは相対パス
+     */
     constructor(filePath: string) {
         const stream = fs.createWriteStream(filePath);
         super(stream, null);
     }
 
+    /**
+     * 全フラグメントをファイルへフラッシュしてストリームを閉じる。
+     * ファイルへの書き込みが完全に完了したことを `finish` イベントで確認する。
+     */
     async finish(): Promise<void> {
         await super.finish();
         this.out.end();
@@ -292,13 +415,38 @@ export class FileBuilder extends StreamBuilder {
     }
 }
 
-/** すべての出力を破棄するビルダー (テストまたはドライラン用) */
+/**
+ * すべての出力を默默で破棄するビルダー。
+ *
+ * テスト・ドライランや、第 2 回以降の `SingleResult.nextBuilder()` 呼び出し時のフォールバックとして利用される。
+ * リソースを一切割り当てないため、特定の出力先が不要な場面で安全に使用できる。
+ */
 export class NullBuilder implements Builder {
+    /** ブロックを追加する (何も行わない)。 */
     addBlock(): void { }
+    /**
+     * ブロックを挿入する (何も行わない)。
+     * @param _id - アンカーブロック ID (未使用)
+     */
     insertBlockBefore(_id: number): void { }
+    /**
+     * データを書き込む (破棄する)。
+     * @param _id - ブロック ID (未使用)
+     * @param _data - データ (未使用)
+     */
     async write(_id: number, _data: Buffer): Promise<void> { }
+    /**
+     * ブロックを閉じる (何も行わない)。
+     * @param _id - ブロック ID (未使用)
+     */
     closeBlock(_id: number): void { }
+    /**
+     * データをシリアル書き込みする (破棄する)。
+     * @param _data - データ (未使用)
+     */
     async serialWrite(_data: Buffer): Promise<void> { }
+    /** 完了処理を実行する (何も行わない)。 */
     async finish(): Promise<void> { }
+    /** リソースを解放する (何も行わない)。 */
     async dispose(): Promise<void> { }
 }

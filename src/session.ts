@@ -30,7 +30,13 @@ import {
 import { SingleResult, DirectoryResults, Results } from './results';
 import { StreamBuilder, FileBuilder, Builder } from './builder';
 
-/** 無効なセッション状態で操作が試行されたときにスローされるエラー */
+/**
+ * セッションが想定外の状態にあるときに操作を試みた場合にスローされるエラー。
+ *
+ * 例:
+ * - トランスコード送信済みのセッションに対して `transcode()` を再度呼ぶ
+ * - クローズ済みセッションに `send()` を呼ぶ
+ */
 export class IllegalStateError extends Error {
     constructor(message: string) {
         super(message);
@@ -38,33 +44,59 @@ export class IllegalStateError extends Error {
     }
 }
 
-/** メッセージコールバック関数の型 */
+/**
+ * サーバーから送信されたメッセージを受け取るコールバック関数の型。
+ * トランスコード中の警告や情報メッセージが通知される。
+ * @param code - メッセージコード (サーバー定義の整数)
+ * @param message - メッセージ本文
+ * @param args - メッセージに付随する追加引数の配列
+ */
 export type MessageCallback = (code: number, message: string, args: string[]) => void;
 
-/** 進捗コールバック関数の型 */
+/**
+ * トランスコード対象コンテンツの読み込み進捗を受け取るコールバック関数の型。
+ * @param total - コンテンツの全バイト数。まだ不明の場合は `null`
+ * @param read - これまでに読み込んだバイト数
+ */
 export type ProgressCallback = (total: number | null, read: number) => void;
 
-/** リゾルバコールバック関数の型 */
+/**
+ * サーバーからのリソース取得要求を処理するコールバック関数の型。
+ * HTML 内の CSS や画像などの外部リソースが必要になるたびに呼ばれる。
+ * `resource.found()` でストリームを取得してデータを書き込むか、
+ * 何もしないことで `isMissing = true` のままリソースなしを通知する。
+ * @param uri - サーバーが要求しているリソースの URI
+ * @param resource - リソース応答を行うための `Resource` オブジェクト
+ */
 export type ResolverCallback = (uri: string, resource: Resource) => void | Promise<void>;
 
-/** セッションオプション インターフェース */
+/** セッション接続時の認証・文字エンコーディング設定 */
 export interface SessionOptions {
+    /** PLAIN 認証のユーザー名 (省略時は空文字) */
     user?: string;
+    /** PLAIN 認証のパスワード (省略時は空文字) */
     password?: string;
+    /** プロトコルのテキストエンコーディング (デフォルト: `UTF-8`) */
     encoding?: string;
 }
 
-/** リソースオプション インターフェース */
+/** `resource()` / `Resource.found()` にリソースのメタ情報を渡すためのオプション */
 export interface ResourceOptions {
+    /** リソースの MIME タイプ (デフォルト: `text/css`) */
     mime_type?: string;
+    /** リソースのエンコーディング (デフォルト: 空文字) */
     encoding?: string;
+    /** リソースの全バイト長。不明の場合は省略 (省略時は `-1` として送信) */
     length?: number;
 }
 
-/** トランスコードオプション インターフェース */
+/** `transcode()` でメインドキュメントのメタ情報を指定するためのオプション */
 export interface TranscodeOptions {
+    /** ドキュメントの MIME タイプ (デフォルト: `text/html`) */
     mimeType?: string;
+    /** ドキュメントのエンコーディング (デフォルト: `UTF-8`) */
     encoding?: string;
+    /** ドキュメントの全バイト長。不明の場合は省略 (省略時は `-1` として送信) */
     length?: number;
 }
 
@@ -202,7 +234,13 @@ class ResourceOut extends Writable {
     }
 }
 
-/** リソースリクエストハンドラ */
+/**
+ * サーバーからのリソース取得要求を表すクラス。
+ *
+ * `ResolverCallback` の引数として渡される。
+ * コールバック内で `found()` を呼び出してリソースデータを送信するか、
+ * 何もしないことでリソースが存在しない (`isMissing = true`) ことをサーバーに通知する。
+ */
 export class Resource {
     private session: Session;
     public uri: string;
@@ -214,7 +252,13 @@ export class Resource {
         this.uri = uri;
     }
 
-    /** リソースが見つかったことをマークし、出力ストリームを取得する */
+    /**
+     * リソースが見つかったことをマークし、コンテンツを書き込むための書き込み可能ストリームを返す。
+     * 返されたストリームへリソースデータをパイプすることで、コンテンツがサーバーに送信される。
+     * このメソッドを呼び出さなかった場合、`isMissing` を `true` のままにしておくことでリソースなしを再現できる。
+     * @param opts - MIMEタイプ、エンコーディング、コンテンツ長さなどを指定するオプション
+     * @returns リソースデータを書き込むための書き込み可能ストリーム
+     */
     found(opts: ResourceOptions = {}): Writable {
         const mimeType = opts.mime_type || 'text/css';
         const encoding = opts.encoding || '';
@@ -226,7 +270,10 @@ export class Resource {
         return this.out;
     }
 
-    /** リソース送信を終了する */
+    /**
+     * リソースデータの送信を完了する。
+     * `found()` で取得したストリームへの書き込み完了後に必ず呼び出すこと。
+     */
     finish(): void {
         if (this.out) {
             this.out.end();
@@ -234,7 +281,20 @@ export class Resource {
     }
 }
 
-/** Copper PDFサーバーと通信するためのセッション */
+/**
+ * Copper PDF サーバーとの 1 対 1 通信セッションを管理するクラス。
+ *
+ * CTIP/2.0 プロトコルを介してドキュメントを PDF にトランスコードし、
+ * 結果をストリーム・ファイル・ディレクトリのいずれかに出力する。
+ *
+ * 基本的な使い方:
+ * 1. `setOutput*()` で出力先を設定する
+ * 2. 必要に応じて `resource()` でリソースを事前送信する
+ * 3. `transcode()` で返ったストリームにドキュメントを書き込み、`end()` する
+ * 4. `waitForCompletion()` でトランスコード完了を待機する
+ * 5. 連続モードの場合は `reset()` してステップ 1 から繰り返す
+ * 6. 最後に `close()` で接続を切断する
+ */
 export class Session {
     public socket: Socket | TLSSocket;
     private options: SessionOptions;
@@ -487,7 +547,13 @@ export class Session {
         }
     }
 
-    /** サーバーにデータを送信 */
+    /**
+     * サーバーにバイナリデータを送信する。
+     * ハンドシェイク完了前の場合はバッファに迏えて後送信する。
+     * @param data - 送信するバイナリフレーム
+     * @returns ソケットの内部バッファがフラッシュされたかどうか (`socket.write` の戻り値と同じ)
+     * @throws {IllegalStateError} セッションが閉じている場合
+     */
     send(data: Buffer): boolean {
         if (this.state >= 3) {
             throw new IllegalStateError("Session is closed");
@@ -511,59 +577,114 @@ export class Session {
 
     // --- Public API ---
 
-    /** 結果ハンドラを設定 */
+    /**
+     * 出力先の結果ハンドラを設定する。
+     * `transcode()` 呼び出し前に設定する必要がある。
+     * @param results - 使用する `Results` 実装
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     setResults(results: Results): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.results = results;
     }
 
-    /** 出力をファイルに設定 */
+    /**
+     * PDF出力先ファイルパスを指定するショートカットメソッド。
+     * 内部で `FileBuilder` を使用する。
+     * @param file - 出力先ファイルのパス
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     setOutputAsFile(file: string): void {
         this.setResults(new SingleResult(new FileBuilder(file)));
     }
 
-    /** 出力を番号付きファイルのディレクトリに設定 */
+    /**
+     * PDF出力先ディレクトリを指定するショートカットメソッド。
+     * トランスコードごとに `{prefix}{n}{suffix}` 形式のファイルが生成される。
+     * @param dir - 出力先ディレクトリのパス
+     * @param prefix - ファイル名のプレフィックス (デフォルト: 空文字列)
+     * @param suffix - ファイル名のサフィックス (デフォルト: 空文字列)
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     setOutputAsDirectory(dir: string, prefix: string = '', suffix: string = ''): void {
         this.setResults(new DirectoryResults(dir, prefix, suffix));
     }
 
-    /** 出力をストリームに設定 */
+    /**
+     * PDF出力先ストリームを指定するショートカットメソッド。
+     * HTTPレスポンスのストリームなど任意の `Writable` を指定できる。
+     * @param stream - 出力先の書き込み可能ストリーム
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     setOutputAsStream(stream: Writable): void {
         this.setResults(new SingleResult(new StreamBuilder(stream)));
     }
 
-    /** メッセージコールバックを設定 */
+    /**
+     * サーバーからのメッセージを受け取るコールバックを設定する。
+     * `null` を渡すことでメッセージ機能を無効化できる。
+     * @param func - メッセージコード、メッセージ、引数配列を受け取るコールバック、または `null`
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     setMessageFunc(func: MessageCallback | null): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.messageFunc = func;
     }
 
-    /** 進捗コールバックを設定 */
+    /**
+     * トランスコードの進捗を受け取るコールバックを設定する。
+     * 法剆コンテンツの全体バイト数 (`total`) と読み込み完了バイト数 (`read`) が渡される。
+     * `total` が `null` の場合はまだ全体さが不明。
+     * @param func - 進捗情報を受け取るコールバック、または `null`
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     setProgressFunc(func: ProgressCallback | null): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.progressFunc = func;
     }
 
-    /** リソースリゾルバコールバックを設定 */
+    /**
+     * リソースリゾルバコールバックを設定する。
+     * コールバックが設定されている場合、CSS画像などの外部リソースの取得要求時に呼び出される。
+     * `null` を渡すとクライアントリソース機能が無効化される。
+     * @param func - URI と `Resource` オブジェクトを受け取るコールバック、または `null`
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     setResolverFunc(func: ResolverCallback | null): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.resolverFunc = func;
         this.send(req_client_resource(!!func));
     }
 
-    /** 連続モードを設定 */
+    /**
+     * 連続トランスコードモードを有効/無効に設定する。
+     * 連続モードを有効にすると、複数のトランスコードを同一セッションで実行できる。
+     * @param continuous - `true` の場合は連続モードを有効にする
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     setContinuous(continuous: boolean): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.send(req_continuous(continuous));
     }
 
-    /** プロパティを設定 */
+    /**
+     * トランスコードプロパティを設定する。
+     * サーバー側で認識される各種制御パラメータを指定するために使用する。
+     * @param name - プロパティ名
+     * @param value - プロパティ値
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     setProperty(name: string, value: string): void {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         this.send(req_property(name, value));
     }
 
-    /** サーバー情報を取得 */
+    /**
+     * 指定した URI に対するサーバー情報を取得する。
+     * サーバーのバージョン情報や属性などを確認する際に利用する。
+     * @param uri - 情報取得対象の URI。空文字列の場合はサーバー機能一覧を返すことが多い
+     * @returns サーバーから返された UTF-8 文字列の情報
+     */
     async getServerInfo(uri: string): Promise<string> {
         return new Promise<string>((resolve) => {
             this._serverInfoCollect = [];
@@ -572,7 +693,14 @@ export class Session {
         });
     }
 
-    /** リソースを送信 */
+    /**
+     * リソースデータをサーバーに送信するための書き込み先ストリームを返す。
+     * `transcode()` 呼び出し前に使用する。返されたストリームへデータをパイプすることでリソースが送信される。
+     * @param uri - リソースの URI
+     * @param opts - MIMEタイプ、エンコーディング、コンテンツ長さなどを指定するオプション
+     * @returns リソースデータを書き込むための書き込み可能ストリーム
+     * @throws {IllegalStateError} トランスコード済みの場合
+     */
     resource(uri: string, opts: ResourceOptions = {}): Writable {
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
         const mimeType = opts.mime_type || 'text/css';
@@ -610,7 +738,13 @@ export class Session {
         return new MainOut(this);
     }
 
-    /** サーバーURLからコンテンツをトランスコードする */
+    /** 
+     * サーバー内URLのドキュメントをトランスコードする。
+     * コンテンツはサーバー側から直接取得されるため、クライアントからデータを送信する必要はない。
+     * 完了を待機するには `waitForCompletion()` を呼び出すこと。
+     * @param uri - サーバー内ドキュメントの URI
+     * @throws {IllegalStateError} セッションが閉じているか、トランスコード済みの場合
+     */
     transcodeServer(uri: string): void {
         if (this.state >= 3) throw new IllegalStateError("Session is closed");
         if (this.state >= 2) throw new IllegalStateError("Main content already sent");
@@ -622,21 +756,33 @@ export class Session {
         });
     }
 
-    /** トランスコードの完了を待機 */
+    /**
+     * 現在進行中のトランスコードまたは結合処理の完了を待機する。
+     * `transcode()`、`transcodeServer()`、`join()` の後に呼び出すこと。
+     * トランスコードが失敗した場合はエラーで reject される。
+     */
     async waitForCompletion(): Promise<void> {
         if (this.completionPromise) {
             await this.completionPromise;
         }
     }
 
-    /** 現在のトランスコードを中断 */
+    /**
+     * 現在進行中のトランスコードを中断する。
+     * @param mode - 中断モード。`0` の場合は現在の出力をフラッシュして中断。それ以外は即座中断
+     */
     abort(mode: number): void {
         if (this.state >= 2) {
             this.send(req_abort(mode));
         }
     }
 
-    /** セッション状態をリセット */
+    /**
+     * セッションの各種設定を初期化して再利用可能な状態に戻す。
+     * 連続モードで複数ドキュメントを変換する際、各巣終処理と次回引数のリセットに使用する。
+     * コールバックやビルダーはクリアされるため、次回の `transcode()` 前に再設定する必要がある。
+     * @throws {IllegalStateError} セッションが閉じている場合
+     */
     reset(): void {
         if (this.state >= 3) throw new IllegalStateError("Session is closed");
         if (this.socket) this.send(req_reset());
@@ -651,7 +797,12 @@ export class Session {
         this.completionPromise = null;
     }
 
-    /** 複数のドキュメントを結合 */
+    /**
+     * `join` トランスコードを開始する。
+     * 連続モードで送信済みの複数ドキュメントをサーバー側で結合する。
+     * 完了を待機するには `waitForCompletion()` を呼び出すこと。
+     * @throws {IllegalStateError} セッションが閉じている場合
+     */
     join(): void {
         if (this.state >= 3) throw new IllegalStateError("Session is closed");
         this.send(req_join());
@@ -662,7 +813,11 @@ export class Session {
         });
     }
 
-    /** セッションを閉じる */
+    /**
+     * セッションを閉じてサーバーとの接続を切断する。
+     * 既に閃じている場合は何も行わない。
+     * このメソッドを呼び出した後はセッションの回復不可。次回は新しいセッションを作成すること。
+     */
     close(): void {
         if (this.state >= 3) return;
         try {
