@@ -15,7 +15,7 @@ const SERVER_URI = 'ctip://cti.li/';
 const USER = 'user';
 const PASSWORD = 'kappa';
 const SOURCE_URI = 'http://cti.li/';
-const OUTPUT_DIR = path.resolve(__dirname, '../../test-output');
+const OUTPUT_DIR = path.resolve(__dirname, '../build/test-output');
 
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 

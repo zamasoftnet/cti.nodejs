@@ -22,3 +22,7 @@ build/
 coverage/
 test/test-config.json
 .nyc_output/
+# AIエージェント用ローカルガイド（git管理外）
+AGENTS.md
+CLAUDE.md
+test/config.development.json
