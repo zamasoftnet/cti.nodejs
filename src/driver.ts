@@ -71,9 +71,15 @@ export class Driver {
         let socket: net.Socket | tls.TLSSocket;
         if (useSSL) {
             const tlsOptions: tls.ConnectionOptions = {
+                host,
+                port,
+                // **SNI を明示する。**これが無いと、名前で証明書を選ぶ中継
+                // (Traefik など)は既定の自己署名証明書を返し、検証に落ちる
+                // (2026-09-10 実測)。IP で繋ぐときは SNI を送らない。
+                servername: net.isIP(host) ? undefined : host,
                 rejectUnauthorized: options.rejectUnauthorized !== undefined ? options.rejectUnauthorized : true
             };
-            socket = tls.connect(port, host, tlsOptions);
+            socket = tls.connect(tlsOptions);
         } else {
             socket = net.connect(port, host);
         }
