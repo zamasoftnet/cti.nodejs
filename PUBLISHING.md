@@ -5,8 +5,8 @@
 `package.json` の `version` を更新し、バージョンタグを push します。
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 GitHub Actions が以下を自動実行します：
